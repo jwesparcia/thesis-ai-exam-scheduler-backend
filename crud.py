@@ -1,36 +1,65 @@
+# crud.py
 from sqlalchemy.orm import Session
-import models, schemas
+from models import Course, YearLevel, Section, Subject
 
-# ----- Sections -----
-def get_sections(db: Session):
-    return db.query(models.Section).all()
+# --- List Courses ---
+def list_courses(db: Session):
+    return db.query(Course).all()
 
-def create_section(db: Session, section: schemas.SectionCreate):
-    db_section = models.Section(section_name=section.section_name)
-    db.add(db_section)
-    db.commit()
-    db.refresh(db_section)
-    return db_section
+# --- List Year Levels ---
+def list_year_levels(db: Session):
+    return db.query(YearLevel).all()
 
+# --- Get Sections + Subjects for course/year/semester ---
+def get_course_year_sem_details(course_id: int, year_level_id: int, semester: int, db: Session):
+    sections = db.query(Section).filter_by(
+        course_id=course_id,
+        year_level_id=year_level_id
+    ).all()
 
-# ----- Subjects -----
-def get_subjects_by_section(db: Session, section_id: int):
-    return (
-        db.query(models.Subject)
-        .join(models.Course, models.Subject.course_id == models.Course.id)
-        .join(models.Section, models.Section.course_id == models.Course.id)
-        .filter(models.Section.id == section_id)
-        .all()
-    )
+    result = []
+    for section in sections:
+        subjects = db.query(Subject).filter_by(
+            course_id=course_id,
+            year_level_id=year_level_id,
+            semester=semester
+        ).all()
 
+        subjects_data = [
+            {
+                "id": subj.id,
+                "code": subj.code,
+                "name": subj.name,
+                "teacher": subj.teacher.name if subj.teacher else "Unassigned"
+            }
+            for subj in subjects
+        ]
 
-def create_subject(db: Session, subject: schemas.SubjectCreate):
-    db_subject = models.Subject(
-        subject_name=subject.subject_name,
-        teacher_name=subject.teacher_name,   # ✅ store teacher
-        section_id=subject.section_id
-    )
-    db.add(db_subject)
-    db.commit()
-    db.refresh(db_subject)
-    return db_subject
+        result.append({
+            "id": section.id,
+            "name": section.name,
+            "subjects": subjects_data
+        })
+
+    return {"sections": result}
+
+# crud.py (add this at the bottom)
+def get_sections_with_subjects(db: Session, year_name: str):
+    sections = db.query(Section).filter(Section.name.like(f"%{year_name}%")).all()
+    result = []
+    for sec in sections:
+        subjects = [
+            {
+                "id": subj.id,
+                "code": subj.code,
+                "name": subj.name,
+                "teacher": subj.teacher.name if subj.teacher else "Unassigned"
+            }
+            for subj in db.query(Subject).filter_by(
+                course_id=sec.course_id,
+                year_level_id=sec.year_level_id
+            ).all()
+        ]
+        result.append({"id": sec.id, "name": sec.name, "subjects": subjects})
+    return {"sections": result}
+
